@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
 from app.db.session import get_db
+from app.models.comment import Comment
 from app.models.project import Project
 from app.models.task import Task
 from app.models.user import User
@@ -156,3 +157,50 @@ async def get_task_access(
         raise HTTPException(status_code=404, detail="Task not found")
 
     return TaskAccess(task=task, project=project, member=member)
+
+
+@dataclass
+class CommentAccess:
+    comment: Comment
+    project: Project
+    member: WorkspaceMember
+
+
+async def get_comment_access(
+    comment_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CommentAccess:
+
+    # 1. Tìm Comment
+    comment = await db.get(Comment, comment_id)
+
+    if comment is None:
+        raise HTTPException(404, "Comment not found")
+
+    # 2. Comment thuộc Task nào?
+    task = await db.get(Task, comment.task_id)
+
+    if task is None:
+        raise HTTPException(404, "Comment not found")
+
+    # 3. Task thuộc Project nào?
+    project = await db.get(Project, task.project_id)
+
+    if project is None:
+        raise HTTPException(404, "Comment not found")
+
+    # 4. User có thuộc Workspace chứa Project không?
+    member = await db.get(
+        WorkspaceMember,
+        (project.workspace_id, current_user.id),
+    )
+
+    if member is None:
+        raise HTTPException(404, "Comment not found")
+
+    return CommentAccess(
+        comment=comment,
+        project=project,
+        member=member,
+    )

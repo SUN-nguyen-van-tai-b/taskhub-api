@@ -53,7 +53,7 @@ async def create_project(
 @router.get(
     "/workspaces/{workspace_id}/projects",
     response_model=list[ProjectResponse],
-    dependencies=Depends(get_workspace_member),
+    dependencies=[Depends(get_workspace_member)],
 )
 async def list_projects(
     workspace_id: int,

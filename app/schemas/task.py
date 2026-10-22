@@ -35,3 +35,11 @@ class TaskUpdate(BaseModel):
     priority: TaskPriority | None = None
     assignee_id: int | None = Field(default=None, gt=0)
     due_date: date | None = None
+
+
+class TaskPage(BaseModel):
+    items: list[TaskResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

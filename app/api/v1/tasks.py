@@ -1,7 +1,9 @@
+import json
+from hashlib import sha256
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import (
@@ -10,12 +12,18 @@ from app.core.dependencies import (
     get_project_access,
     get_task_access,
 )
+from app.core.redis_cache import (
+    get_task_cache_version,
+    invalidate_task_cache,
+    read_task_cache,
+    write_task_cache,
+)
 from app.db.session import get_db
 from app.models.project import ProjectStatus
-from app.models.task import Task
+from app.models.task import Task, TaskPriority, TaskStatus
 from app.models.user import User
 from app.models.workspace_member import WorkspaceMember, WorkspaceRole
-from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
+from app.schemas.task import TaskCreate, TaskPage, TaskResponse, TaskUpdate
 
 router = APIRouter(tags=["Tasks"])
 
@@ -96,6 +104,8 @@ async def create_task(
     # 7. Đọc lại dữ liệu như id, created_at từ database.
     await db.refresh(task)
 
+    await invalidate_task_cache(task.project_id)
+
     return task
 
 
@@ -108,21 +118,126 @@ async def get_task(
 
 @router.get(
     "/projects/{project_id}/tasks",
-    response_model=list[TaskResponse],
+    response_model=TaskPage,
 )
 async def list_tasks(
     project_id: int,
-    access: Annotated[ProjectAccess, Depends(get_project_access)],
+    access: Annotated[
+        ProjectAccess,
+        Depends(get_project_access),
+    ],
     db: Annotated[AsyncSession, Depends(get_db)],
+    task_status: Annotated[
+        TaskStatus | None,
+        Query(alias="status"),
+    ] = None,
+    priority: TaskPriority | None = None,
+    assignee_id: Annotated[
+        int | None,
+        Query(gt=0),
+    ] = None,
+    page: Annotated[
+        int,
+        Query(ge=1),
+    ] = 1,
+    page_size: Annotated[
+        int,
+        Query(ge=1, le=100),
+    ] = 10,
 ):
-    query = (
-        select(Task)
-        .where(Task.project_id == project_id)
-        .order_by(Task.created_at.desc(), Task.id.desc())
+    # Các bộ lọc phải được đưa vào key.
+    # Hai request có status khác nhau không được dùng chung cache.
+    filters = {
+        "status": task_status.value if task_status is not None else None,
+        "priority": priority.value if priority is not None else None,
+        "assignee_id": assignee_id,
+        "page": page,
+        "page_size": page_size,
+    }
+
+    filters_json = json.dumps(
+        filters,
+        sort_keys=True,
     )
 
+    filters_hash = sha256(filters_json.encode("utf-8")).hexdigest()
+
+    version = await get_task_cache_version(project_id)
+
+    cache_key = None
+
+    if version is not None:
+        cache_key = f"taskhub:tasks:project:{project_id}:v:{version}:{filters_hash}"
+
+        cached_data = await read_task_cache(cache_key)
+
+        if cached_data is not None:
+            return TaskPage.model_validate(cached_data)
+
+    query = select(Task).where(Task.project_id == project_id)
+
+    if task_status is not None:
+        query = query.where(Task.status == task_status)
+
+    if priority is not None:
+        query = query.where(Task.priority == priority)
+
+    if assignee_id is not None:
+        query = query.where(Task.assignee_id == assignee_id)
+
+    # Phải đếm trước khi áp dụng LIMIT/OFFSET.
+    # Nếu chỉ đếm Task trong trang hiện tại,
+    # frontend không biết tổng cộng có bao nhiêu trang.
+    count_query = select(func.count()).select_from(query.subquery())
+
+    total = await db.scalar(count_query)
+    total = total or 0
+    # Page 1, size 10 -> offset 0
+    # Page 2, size 10 -> offset 10
+    # Page 3, size 10 -> offset 20
+    offset = (page - 1) * page_size
+
+    # ORDER BY created_at DESC để Task mới nằm trước.
+    # Thêm id DESC để giữ thứ tự ổn định khi
+    # nhiều Task có cùng created_at.
+    query = (
+        query.order_by(
+            Task.created_at.desc(),
+            Task.id.desc(),
+        )
+        .offset(offset)
+        .limit(page_size)
+    )
+
+    # scalars() trả về Task object trực tiếp,
+    # thay vì các Row chứa Task.
     result = await db.scalars(query)
-    return result.all()
+    tasks = result.all()
+
+    # Ví dụ 21 Task / 10 Task mỗi trang = 3 trang.
+    # Nếu không có Task, total_pages = 0.
+    total_pages = (total + page_size - 1) // page_size
+
+    response = TaskPage(
+        items=list(tasks),
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
+
+    if cache_key is not None:
+        # Kiểm tra version lần nữa để hạn chế ghi cache cũ
+        # nếu Task vừa thay đổi trong lúc query.
+        latest_version = await get_task_cache_version(project_id)
+
+        if latest_version == version:
+            await write_task_cache(
+                cache_key,
+                response.model_dump(mode="json"),
+            )
+
+    return response
 
 
 @router.delete(
@@ -149,9 +264,12 @@ async def delete_task(
             status_code=409,
             detail="Cannot modify tasks in archived project",
         )
+    project_id = access.task.project_id
 
     await db.delete(access.task)
     await db.commit()
+
+    await invalidate_task_cache(project_id)
 
 
 @router.patch(
@@ -217,4 +335,7 @@ async def update_task(
         setattr(access.task, key, value)
     await db.commit()
     await db.refresh(access.task)
+
+    await invalidate_task_cache(access.task.project_id)
+
     return access.task
