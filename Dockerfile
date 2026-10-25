@@ -16,5 +16,5 @@ COPY . .
 
 EXPOSE 8000
 
-# Chạy FastAPI trong container.
-CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Migration và Chạy FastAPI trong container.
+CMD ["sh", "-c", "uv run --no-sync alembic upgrade head && exec uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000"]

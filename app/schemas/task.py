@@ -43,3 +43,9 @@ class TaskPage(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+class TaskFilters(BaseModel):
+    status: TaskStatus | None = None
+    priority: TaskPriority | None = None
+    assignee_id: int | None = None

@@ -8,7 +8,7 @@ services:
       - .env
     environment:
       DATABASE_URL: ${DOCKER_DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
+      REDIS_URL: ${DOCKER_REDIS_URL}
     depends_on:
       db:
         condition: service_healthy

@@ -1,18 +1,11 @@
 import json
 import logging
-import os
 
-from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-logger = logging.getLogger(__name__)
+from app.db.redis import redis_client
 
-redis_client = Redis.from_url(
-    os.getenv("REDIS_URL", "redis://localhost:6379/0"),
-    decode_responses=True,
-    socket_connect_timeout=1,
-    socket_timeout=1,
-)
+logger = logging.getLogger(__name__)
 
 TASK_CACHE_TTL = 60  # 60 giây
 
@@ -70,3 +63,7 @@ async def write_task_cache(key: str, data: dict) -> None:
 
     except (RedisError, ValueError, TypeError):
         logger.warning("Failed to write task cache", exc_info=True)
+
+
+async def close_redis() -> None:
+    await redis_client.aclose()

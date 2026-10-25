@@ -1,13 +1,16 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.core.security import hash_password, verify_password
+from app.db.redis import get_redis
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import ChangePasswordRequest, UserResponse, UserUpdate
+from app.services.token_service import revoke_all_refresh_tokens
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -46,13 +49,14 @@ async def change_password(
     data: ChangePasswordRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ):
     # 1. Kiểm tra old_password có đúng không
     is_valid = verify_password(data.old_password, current_user.hashed_password)
     # 2. Nếu sai → HTTP 400
     if not is_valid:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Wrongs password"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Wrong password"
         )
     # 3. Kiểm tra new_password khác old_password
     if data.old_password == data.new_password:
@@ -66,4 +70,9 @@ async def change_password(
     current_user.hashed_password = hashed_password
     # 6. Commit database
     await db.commit()
-    # 7. Không trả response body
+
+    # 7. Thu hồi tất cả Refresh Token của user.
+    await revoke_all_refresh_tokens(
+        redis=redis,
+        user_id=current_user.id,
+    )

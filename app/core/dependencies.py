@@ -4,6 +4,7 @@ from typing import Annotated
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
@@ -135,28 +136,36 @@ async def get_task_access(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TaskAccess:
-    # Tìm Task để biết nó thuộc Project nào.
-    task = await db.get(Task, task_id)
 
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Tìm Project để lấy workspace_id.
-    project = await db.get(Project, task.project_id)
-
-    if project is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Xác nhận người đang đăng nhập thuộc Workspace chứa Task.
-    member = await db.get(
-        WorkspaceMember,
-        (project.workspace_id, current_user.id),
+    query = (
+        select(Task, Project, WorkspaceMember)
+        .join(Project, Task.project_id == Project.id)
+        .join(
+            WorkspaceMember,
+            WorkspaceMember.workspace_id == Project.workspace_id,
+        )
+        .where(
+            Task.id == task_id,
+            WorkspaceMember.user_id == current_user.id,
+        )
     )
 
-    if member is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+    result = await db.execute(query)
+    row = result.one_or_none()
 
-    return TaskAccess(task=task, project=project, member=member)
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    task, project, member = row
+
+    return TaskAccess(
+        task=task,
+        project=project,
+        member=member,
+    )
 
 
 @dataclass
@@ -172,32 +181,30 @@ async def get_comment_access(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CommentAccess:
 
-    # 1. Tìm Comment
-    comment = await db.get(Comment, comment_id)
-
-    if comment is None:
-        raise HTTPException(404, "Comment not found")
-
-    # 2. Comment thuộc Task nào?
-    task = await db.get(Task, comment.task_id)
-
-    if task is None:
-        raise HTTPException(404, "Comment not found")
-
-    # 3. Task thuộc Project nào?
-    project = await db.get(Project, task.project_id)
-
-    if project is None:
-        raise HTTPException(404, "Comment not found")
-
-    # 4. User có thuộc Workspace chứa Project không?
-    member = await db.get(
-        WorkspaceMember,
-        (project.workspace_id, current_user.id),
+    query = (
+        select(Comment, Project, WorkspaceMember)
+        .join(Task, Comment.task_id == Task.id)
+        .join(Project, Task.project_id == Project.id)
+        .join(
+            WorkspaceMember,
+            WorkspaceMember.workspace_id == Project.workspace_id,
+        )
+        .where(
+            Comment.id == comment_id,
+            WorkspaceMember.user_id == current_user.id,
+        )
     )
 
-    if member is None:
-        raise HTTPException(404, "Comment not found")
+    result = await db.execute(query)
+    row = result.one_or_none()
+
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Comment not found",
+        )
+
+    comment, project, member = row
 
     return CommentAccess(
         comment=comment,

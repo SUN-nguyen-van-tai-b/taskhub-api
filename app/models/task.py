@@ -27,8 +27,9 @@ class Task(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
+    # Xóa Project -> tự động xóa Task.
     project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id"),
+        ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -36,6 +37,7 @@ class Task(Base):
     assignee_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"),
         nullable=True,
+        index=True,
     )
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -65,6 +67,7 @@ class Task(Base):
     created_by: Mapped[int] = mapped_column(
         ForeignKey("users.id"),
         nullable=False,
+        index=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(

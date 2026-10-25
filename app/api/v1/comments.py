@@ -157,10 +157,10 @@ async def update_comment(
                 detail="Comment content cannot be null",
             )
 
-    access.comment.content = content
+        access.comment.content = content
 
-    await db.commit()
-    await db.refresh(access.comment)
+        await db.commit()
+        await db.refresh(access.comment)
 
     return access.comment
 

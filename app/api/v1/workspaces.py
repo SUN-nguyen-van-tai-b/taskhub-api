@@ -1,11 +1,17 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
+from app.core.redis_cache import (
+    invalidate_task_cache,
+)
 from app.db.session import get_db
+from app.models.project import Project
+from app.models.task import Task
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember, WorkspaceRole
@@ -239,7 +245,7 @@ async def delete_workspace(
     )
     if member is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=404,
             detail="Workspace not found",
         )
     # 3. Kiểm tra member.role có phải OWNER không.
@@ -252,24 +258,36 @@ async def delete_workspace(
             detail="Only OWNER can delete workspace",
         )
 
-    # 4. Xóa các WorkspaceMember thuộc Workspace này.
-    # Vì workspace_members có khóa ngoại workspace_id,
-    # cần xử lý các bản ghi phụ thuộc trước khi xóa Workspace.
+    # 4. Kiểm tra Workspace còn Project hay không.
+    # Nếu còn Project thì trả 409, tránh lỗi Foreign Key.
 
-    query = delete(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace_id)
+    has_projects = await db.scalar(
+        select(exists().where(Project.workspace_id == workspace_id))
+    )
 
-    await db.execute(query)
+    if has_projects:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete workspace that contains projects",
+        )
 
     # 5. Xóa Workspace bằng await db.delete(workspace).
     # AsyncSession.delete() là coroutine nên phải await.
-    await db.delete(workspace)
+    try:
+        await db.execute(
+            delete(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace_id)
+        )
 
-    # 6. Commit một lần.
-    # Giữ việc xóa memberships và Workspace trong
-    # cùng transaction để tránh xóa dở dang.
-    await db.commit()
+        await db.delete(workspace)
+        await db.commit()
 
-    # 7. Không trả response body vì HTTP 204.
+    except IntegrityError:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Workspace has related records and cannot be deleted",
+        )
 
 
 @router.post(
@@ -448,7 +466,7 @@ async def remove_workspace_member(
     if target_member is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
+            detail="Workspace member not found",
         )
 
     # 4. Không cho phép xóa OWNER.
@@ -460,15 +478,38 @@ async def remove_workspace_member(
             detail="Không thể delete người có role là OWNER",
         )
 
-    # 5. Dùng await db.delete(target_member).
-    # Vì target_member là ORM object đã được truy vấn,
-    # SQLAlchemy sẽ đánh dấu bản ghi đó để xóa.
+    # Lấy danh sách Project có Task đang assign cho user.
+    result = await db.scalars(
+        select(Task.project_id)
+        .join(Project, Task.project_id == Project.id)
+        .where(
+            Project.workspace_id == workspace_id,
+            Task.assignee_id == user_id,
+        )
+        .distinct()
+    )
+
+    affected_project_ids = result.all()
+
+    # Unassign Task của member trong Workspace.
+    await db.execute(
+        update(Task)
+        .where(
+            Task.assignee_id == user_id,
+            Task.project_id.in_(affected_project_ids),
+        )
+        .values(assignee_id=None)
+    )
+
+    # Xóa member.
     await db.delete(target_member)
-    # 6. Dùng await db.commit().
-    # Vì cần xác nhận thao tác DELETE trong PostgreSQL.
+
+    # Commit một lần để tránh cập nhật dở dang.
     await db.commit()
-    # 7. Không trả response body.
-    # Vì HTTP 204 biểu thị thành công và không có nội dung.
+
+    # Invalidate cache các Project bị ảnh hưởng.
+    for project_id in affected_project_ids:
+        await invalidate_task_cache(project_id)
 
 
 @router.patch(
