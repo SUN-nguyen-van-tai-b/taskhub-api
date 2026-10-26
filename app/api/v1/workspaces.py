@@ -1,11 +1,19 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import delete, exists, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
+from app.core.enums import WorkspaceRole
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import (
+    ConflictException,
+    ForbiddenException,
+    NotFoundException,
+    ValidationException,
+)
 from app.core.redis_cache import (
     invalidate_task_cache,
 )
@@ -14,7 +22,7 @@ from app.models.project import Project
 from app.models.task import Task
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.models.workspace_member import WorkspaceMember, WorkspaceRole
+from app.models.workspace_member import WorkspaceMember
 from app.schemas.workspace import (
     WorkspaceCreate,
     WorkspaceMemberCreate,
@@ -127,10 +135,7 @@ async def get_workspace(
     workspace = await db.get(Workspace, workspace_id)
 
     if workspace is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     # Bước 2: Kiểm tra WorkspaceMember với:
     # workspace_id = workspace_id
@@ -146,10 +151,7 @@ async def get_workspace(
     # Tránh để người ngoài phân biệt Workspace có tồn tại hay không.
 
     if member is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
     # Bước 4: Nếu có membership, trả Workspace.
     return workspace
 
@@ -170,10 +172,7 @@ async def update_workspace(
     workspace = await db.get(Workspace, workspace_id)
 
     if workspace is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     # 2. Tìm WorkspaceMember theo (workspace_id, current_user.id).
     # Vì mỗi User có một role riêng trong từng Workspace.
@@ -185,19 +184,13 @@ async def update_workspace(
     # 3. Nếu không phải thành viên, trả HTTP 404.
     # Tránh tiết lộ sự tồn tại của Workspace cho người ngoài.
     if member is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     # 4. Nếu member.role != WorkspaceRole.OWNER, trả HTTP 403.
     # Chỉ OWNER mới được phép đổi tên Workspace.
 
     if member.role != WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only OWNER can update workspace",
-        )
+        raise ForbiddenException(ErrorMessages.ONLY_OWNER_CAN_UPDATE_WORKSPACE)
 
     # 5. Gán tên mới từ data.name vào workspace.name.
     # SQLAlchemy theo dõi thay đổi trên ORM object.
@@ -230,10 +223,7 @@ async def delete_workspace(
     workspace = await db.get(Workspace, workspace_id)
 
     if workspace is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     # 2. Kiểm tra membership của current_user.
     # Không phải thành viên thì trả 404 để hạn chế
@@ -244,19 +234,13 @@ async def delete_workspace(
         (workspace_id, current_user.id),
     )
     if member is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
     # 3. Kiểm tra member.role có phải OWNER không.
     # Chỉ OWNER có quyền xóa toàn bộ Workspace.
     # Nếu không đủ quyền thì trả 403.
 
     if member.role != WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only OWNER can delete workspace",
-        )
+        raise ForbiddenException(ErrorMessages.ONLY_OWNER_CAN_DELETE_WORKSPACE)
 
     # 4. Kiểm tra Workspace còn Project hay không.
     # Nếu còn Project thì trả 409, tránh lỗi Foreign Key.
@@ -266,10 +250,7 @@ async def delete_workspace(
     )
 
     if has_projects:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot delete workspace that contains projects",
-        )
+        raise ConflictException(ErrorMessages.WORKSPACE_HAS_PROJECTS)
 
     # 5. Xóa Workspace bằng await db.delete(workspace).
     # AsyncSession.delete() là coroutine nên phải await.
@@ -281,13 +262,10 @@ async def delete_workspace(
         await db.delete(workspace)
         await db.commit()
 
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
 
-        raise HTTPException(
-            status_code=409,
-            detail="Workspace has related records and cannot be deleted",
-        )
+        raise ConflictException(ErrorMessages.WORKSPACE_DELETE_CONFLICT) from exc
 
 
 @router.post(
@@ -308,10 +286,7 @@ async def add_workspace_member(
     workspace = await db.get(Workspace, workspace_id)
 
     if workspace is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     # Bước 2: Tìm membership của current_user.
     # Tại sao? Đăng nhập thành công không đồng nghĩa
@@ -323,38 +298,27 @@ async def add_workspace_member(
         (workspace_id, current_user.id),
     )
     if member is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
     # Bước 3: Kiểm tra current_user có role OWNER không.
     # Tại sao? Chỉ OWNER mới được phép quản lý thành viên.
     # EDITOR và VIEWER phải nhận HTTP 403.
 
     if member.role != WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only OWNER can add workspace members",
-        )
+        raise ForbiddenException(ErrorMessages.ONLY_OWNER_CAN_ADD_WORKSPACE_MEMBERS)
 
     # Bước 4: Kiểm tra data.role không phải OWNER.
     # Tại sao? Không cho phép một người thêm OWNER mới
     # thông qua endpoint này. Nếu vi phạm → 422.
 
     if data.role == WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Cannot assign OWNER role",
-        )
+        raise ValidationException(ErrorMessages.CANNOT_ASSIGN_OWNER_ROLE)
 
     # Bước 5: Tìm User cần thêm bằng data.user_id.
     # Tại sao? user_id phải tham chiếu đến User tồn tại.
     # Nên kiểm tra is_active để không mời tài khoản bị khóa.
     user = await db.get(User, data.user_id)
     if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
     # Bước 6: Kiểm tra User đã là thành viên chưa.
     # Dùng db.get(WorkspaceMember, (workspace_id, data.user_id)).
     # Tại sao? Composite primary key không cho phép
@@ -365,10 +329,7 @@ async def add_workspace_member(
         (workspace_id, data.user_id),
     )
     if existing_member is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User is already a workspace member",
-        )
+        raise ConflictException(ErrorMessages.USER_ALREADY_WORKSPACE_MEMBER)
 
     # Bước 7: Tạo WorkspaceMember và db.add().
     # Tại sao? Đây là bản ghi liên kết User với Workspace,
@@ -403,10 +364,7 @@ async def list_workspace_members(
         (workspace_id, current_user.id),
     )
     if member is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     # 2. SELECT WorkspaceMember và lọc theo workspace_id.
     # Vì ta muốn lấy TẤT CẢ membership của Workspace,
@@ -440,20 +398,14 @@ async def remove_workspace_member(
         (workspace_id, current_user.id),
     )
     if member is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace member not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_MEMBER_NOT_FOUND)
 
     # 2. Kiểm tra current_user có role OWNER không.
     # Vì EDITOR và VIEWER không có quyền xóa thành viên.
     # Nếu không phải OWNER, trả HTTP 403.
 
     if member.role != WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only OWNER can delete members",
-        )
+        raise ForbiddenException(ErrorMessages.ONLY_OWNER_CAN_DELETE_MEMBERS)
 
     # 3. Tìm WorkspaceMember cần xóa bằng (workspace_id, user_id).
     # Vì phải xác định chính xác người cần xóa trong Workspace này.
@@ -464,19 +416,13 @@ async def remove_workspace_member(
         (workspace_id, user_id),
     )
     if target_member is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace member not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_MEMBER_NOT_FOUND)
 
     # 4. Không cho phép xóa OWNER.
     # Vì Workspace phải luôn có một OWNER theo thiết kế hiện tại.
     # Nếu thành viên cần xóa là OWNER, trả HTTP 403.
     if target_member.role == WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Không thể delete người có role là OWNER",
-        )
+        raise ForbiddenException(ErrorMessages.CANNOT_REMOVE_OWNER_MEMBER)
 
     # Lấy danh sách Project có Task đang assign cho user.
     result = await db.scalars(
@@ -533,20 +479,14 @@ async def update_workspace_member_role(
         (workspace_id, current_user.id),
     )
     if member is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     # 2. Kiểm tra current_user có role OWNER.
     # Tại sao? Chỉ OWNER được thay đổi quyền thành viên.
     # Nếu là EDITOR hoặc VIEWER → HTTP 403.
 
     if member.role != WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only OWNER can update members",
-        )
+        raise ForbiddenException(ErrorMessages.ONLY_OWNER_CAN_UPDATE_MEMBERS)
 
     # 3. Tìm membership của user_id cần thay đổi.
     # Tại sao? Chúng ta sửa role trên WorkspaceMember,
@@ -558,29 +498,20 @@ async def update_workspace_member_role(
         (workspace_id, user_id),
     )
     if target_member is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     # 4. Không cho phép thay đổi role của OWNER.
     # Tại sao? OWNER được xác định khi tạo Workspace.
     # Việc chuyển quyền sở hữu phải là một chức năng riêng.
     if target_member.role == WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Không cho phép thay đổi role của OWNER",
-        )
+        raise ForbiddenException(ErrorMessages.CANNOT_CHANGE_OWNER_ROLE)
 
     # 5. Không cho phép gán role OWNER.
     # Tại sao? API này chỉ hỗ trợ chuyển đổi
     # giữa EDITOR và VIEWER.
 
     if data.role == WorkspaceRole.OWNER:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Không cho phép thay đổi role thành OWNER",
-        )
+        raise ValidationException(ErrorMessages.CANNOT_ASSIGN_OWNER_ROLE)
 
     # 6. Cập nhật target_member.role = data.role.
     # SQLAlchemy sẽ theo dõi thay đổi trên ORM object.

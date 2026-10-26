@@ -1,10 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import BadRequestException
 from app.core.security import hash_password, verify_password
 from app.db.redis import get_redis
 from app.db.session import get_db
@@ -55,15 +57,10 @@ async def change_password(
     is_valid = verify_password(data.old_password, current_user.hashed_password)
     # 2. Nếu sai → HTTP 400
     if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Wrong password"
-        )
+        raise BadRequestException(ErrorMessages.WRONG_PASSWORD)
     # 3. Kiểm tra new_password khác old_password
     if data.old_password == data.new_password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be different from old password",
-        )
+        raise BadRequestException(ErrorMessages.NEW_PASSWORD_MUST_BE_DIFFERENT)
     # 4. Hash new_password
     hashed_password = hash_password(data.new_password)
     # 5. Gán vào current_user.hashed_password

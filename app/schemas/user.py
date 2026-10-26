@@ -15,17 +15,15 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     password: str = Field(min_length=8, max_length=50)
 
-    @field_validator("email")
+    @field_validator("email", mode="after")
     @classmethod
     def normalize_email(cls, value: str) -> str:
-        return str(value).strip().lower()
+        return value.strip().lower()
 
     @field_validator("full_name", mode="before")
     @classmethod
     def normalize_full_name(cls, value: str) -> str:
-        if isinstance(value, str):
-            return value.strip()
-        return value
+        return value.strip() if isinstance(value, str) else value
 
 
 class UserResponse(BaseModel):

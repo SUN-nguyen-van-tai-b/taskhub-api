@@ -1,23 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, func
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.enums import UserRole
 from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.workspace import Workspace
     from app.models.workspace_member import WorkspaceMember
-
-
-class UserRole(str, Enum):
-    ADMIN = "ADMIN"
-    MEMBER = "MEMBER"
 
 
 class User(Base):
@@ -56,6 +51,6 @@ class User(Base):
     )
 
     memberships: Mapped[list[WorkspaceMember]] = relationship(
-    "WorkspaceMember",
-    back_populates="user",
-)
+        "WorkspaceMember",
+        back_populates="user",
+    )

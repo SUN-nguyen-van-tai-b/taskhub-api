@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,12 @@ from app.core.dependencies import (
     get_current_user,
     get_project_access,
     get_workspace_member,
+)
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import (
+    ForbiddenException,
+    NotFoundException,
+    ValidationException,
 )
 from app.db.session import get_db
 from app.models.project import Project, ProjectStatus
@@ -32,10 +38,7 @@ async def create_project(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     if member.role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise HTTPException(
-            status_code=403,
-            detail="Insufficient permissions",
-        )
+        raise ForbiddenException(ErrorMessages.FORBIDDEN)
 
     project = Project(
         workspace_id=workspace_id,
@@ -96,7 +99,7 @@ async def update_project(
     project = await db.get(Project, project_id)
 
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise NotFoundException(ErrorMessages.PROJECT_NOT_FOUND)
 
     member = await db.get(
         WorkspaceMember,
@@ -104,10 +107,10 @@ async def update_project(
     )
 
     if member is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise NotFoundException(ErrorMessages.PROJECT_NOT_FOUND)
 
     if member.role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise ForbiddenException(ErrorMessages.FORBIDDEN)
 
     update_data = data.model_dump(exclude_unset=True)
 
@@ -115,7 +118,9 @@ async def update_project(
     # exclude_unset chỉ bỏ field không được gửi;
     # nó không tự loại bỏ name=null.
     if "name" in update_data and update_data["name"] is None:
-        raise HTTPException(status_code=422, detail="name cannot be null")
+        raise ValidationException(
+            ErrorMessages.REQUIRED_FIELD_CANNOT_BE_NULL.format(field="name")
+        )
 
     for key, value in update_data.items():
         setattr(project, key, value)
@@ -138,10 +143,7 @@ async def archive_project(
         WorkspaceRole.OWNER,
         WorkspaceRole.EDITOR,
     ):
-        raise HTTPException(
-            status_code=403,
-            detail="Insufficient permissions",
-        )
+        raise ForbiddenException(ErrorMessages.FORBIDDEN)
 
     access.project.status = ProjectStatus.ARCHIVED
 

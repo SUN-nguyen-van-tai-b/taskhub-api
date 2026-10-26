@@ -42,13 +42,6 @@ async def save_refresh_token(
         await pipe.execute()
 
 
-async def get_refresh_token(
-    redis: Redis,
-    jti: str,
-) -> str | None:
-    return await redis.get(refresh_key(jti))
-
-
 REVOKE_ONE_SCRIPT = """
 local user_id = redis.call('GET', KEYS[1])
 

@@ -42,3 +42,13 @@ class ForbiddenException(AppException):
 class ConflictException(AppException):
     def __init__(self, message: str):
         super().__init__(409, message)
+
+
+class ValidationException(AppException):
+    def __init__(self, message: str = "Validation failed"):
+        super().__init__(status_code=422, message=message)
+
+
+class BadRequestException(AppException):
+    def __init__(self, message: str = "Bad request"):
+        super().__init__(status_code=400, message=message)

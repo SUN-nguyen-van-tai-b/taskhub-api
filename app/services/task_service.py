@@ -2,11 +2,17 @@ import json
 import logging
 from hashlib import sha256
 
-from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import ProjectAccess, TaskAccess
+from app.core.enums import WorkspaceRole
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import (
+    ConflictException,
+    ForbiddenException,
+    ValidationException,
+)
 from app.core.redis_cache import (
     get_task_cache_version,
     invalidate_task_cache,
@@ -16,7 +22,7 @@ from app.core.redis_cache import (
 from app.models.project import Project, ProjectStatus
 from app.models.task import Task
 from app.models.user import User
-from app.models.workspace_member import WorkspaceMember, WorkspaceRole
+from app.models.workspace_member import WorkspaceMember
 from app.schemas.task import (
     TaskCreate,
     TaskFilters,
@@ -30,19 +36,13 @@ logger = logging.getLogger(__name__)
 def require_task_write_access(role: WorkspaceRole) -> None:
     # VIEWER chỉ được xem Task.
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions",
-        )
+        raise ForbiddenException(ErrorMessages.FORBIDDEN)
 
 
 def require_active_project(project: Project) -> None:
     # Project đã archive không được thay đổi Task.
     if project.status == ProjectStatus.ARCHIVED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Cannot modify tasks in archived project",
-        )
+        raise ConflictException(ErrorMessages.CANNOT_MODIFY_ARCHIVED_PROJECT_TASKS)
 
 
 async def validate_assignee(
@@ -58,10 +58,7 @@ async def validate_assignee(
     assignee = await db.get(User, assignee_id)
 
     if assignee is None or not assignee.is_active:
-        raise HTTPException(
-            status_code=422,
-            detail="Assignee does not exist or is inactive",
-        )
+        raise ValidationException(ErrorMessages.ASSIGNEE_NOT_FOUND_OR_INACTIVE)
 
     # User phải thuộc đúng Workspace chứa Task.
     member = await db.get(
@@ -70,10 +67,7 @@ async def validate_assignee(
     )
 
     if member is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Assignee is not a member of this workspace",
-        )
+        raise ValidationException(ErrorMessages.ASSIGNEE_NOT_WORKSPACE_MEMBER)
 
 
 async def create_task_service(
@@ -248,9 +242,8 @@ async def update_task_service(
 
     for field in required_fields:
         if field in update_data and update_data[field] is None:
-            raise HTTPException(
-                status_code=422,
-                detail=f"{field} cannot be null",
+            raise ValidationException(
+                ErrorMessages.REQUIRED_FIELD_CANNOT_BE_NULL.format(field=field)
             )
 
     # Nếu frontend muốn đổi assignee, phải kiểm tra lại

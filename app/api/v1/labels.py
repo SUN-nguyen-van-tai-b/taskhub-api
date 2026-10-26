@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,13 @@ from app.core.dependencies import (
     get_current_user,
     get_project_access,
     get_task_access,
+)
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import (
+    ConflictException,
+    ForbiddenException,
+    NotFoundException,
+    ValidationException,
 )
 from app.db.session import get_db
 from app.models.label import Label
@@ -28,19 +35,13 @@ def require_label_write_access(role: WorkspaceRole) -> None:
     # Tách logic kiểm tra quyền thành một hàm dùng chung.
     # OWNER/EDITOR được chỉnh sửa Labels, VIEWER chỉ được xem.
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions",
-        )
+        raise ForbiddenException(ErrorMessages.FORBIDDEN)
 
 
 def require_active_project(project: Project) -> None:
     # Project đã archive chỉ cho đọc dữ liệu.
     if project.status == ProjectStatus.ARCHIVED:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot modify labels in archived project",
-        )
+        raise ConflictException(ErrorMessages.PROJECT_ARCHIVED)
 
 
 @dataclass
@@ -74,10 +75,7 @@ async def get_label_access(
     row = result.one_or_none()
 
     if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Label not found",
-        )
+        raise NotFoundException(ErrorMessages.LABEL_NOT_FOUND)
 
     # row[0] = Label
     # row[1] = Project
@@ -111,10 +109,7 @@ async def create_label(
         )
     )
     if existing is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Label name already exists in this project",
-        )
+        raise ConflictException(ErrorMessages.LABEL_ALREADY_EXISTS)
 
     label = Label(
         project_id=project_id,
@@ -129,10 +124,7 @@ async def create_label(
         # UniqueConstraint bảo vệ cả trường hợp hai request
         # cùng tạo Label trùng tên gần như đồng thời.
         await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Unable to create label due to a database constraint",
-        ) from exc
+        raise ConflictException(ErrorMessages.LABEL_CREATE_CONFLICT) from exc
 
     await db.refresh(label)
     return label
@@ -175,9 +167,8 @@ async def update_label(
 
     for key, value in update_data.items():
         if value is None:
-            raise HTTPException(
-                status_code=422,
-                detail=f"{key} cannot be null",
+            raise ValidationException(
+                ErrorMessages.REQUIRED_FIELD_CANNOT_BE_NULL.format(field=key)
             )
         setattr(access.label, key, value)
 
@@ -185,11 +176,7 @@ async def update_label(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Unable to update label due to a database constraint",
-        ) from exc
-
+        raise ConflictException(ErrorMessages.LABEL_UPDATE_CONFLICT) from exc
     await db.refresh(access.label)
     return access.label
 
@@ -230,10 +217,7 @@ async def attach_label_to_task(
     # Kiểm tra Label cùng Project với Task.
     # Đây là phần quan trọng để ngăn liên kết chéo Project.
     if label is None or label.project_id != access.task.project_id:
-        raise HTTPException(
-            status_code=404,
-            detail="Label not found in this project",
-        )
+        raise NotFoundException(ErrorMessages.LABEL_NOT_FOUND_IN_PROJECT)
 
     # Composite PK ngăn gắn trùng một Label vào cùng Task.
     existing = await db.get(
@@ -241,10 +225,7 @@ async def attach_label_to_task(
         (access.task.id, label_id),
     )
     if existing is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Label already attached",
-        )
+        raise ConflictException(ErrorMessages.LABEL_ALREADY_ATTACHED)
 
     db.add(TaskLabel(task_id=access.task.id, label_id=label_id))
 
@@ -252,10 +233,7 @@ async def attach_label_to_task(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Unable to attach label",
-        ) from exc
+        raise ConflictException(ErrorMessages.LABEL_ATTACH_CONFLICT) from exc
 
 
 # 6. DETACH LABEL FROM TASK
@@ -277,10 +255,7 @@ async def detach_label_from_task(
         (access.task.id, label_id),
     )
     if task_label is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Task label association not found",
-        )
+        raise NotFoundException(ErrorMessages.TASK_LABEL_ASSOCIATION_NOT_FOUND)
 
     await db.delete(task_label)
     await db.commit()

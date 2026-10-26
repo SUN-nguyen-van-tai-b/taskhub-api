@@ -2,10 +2,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import HTTPException
 
+from app.core.enums import WorkspaceRole
+from app.core.exceptions import ConflictException, ForbiddenException
 from app.models.project import ProjectStatus
-from app.models.workspace_member import WorkspaceRole
 from app.schemas.task import TaskCreate, TaskUpdate
 from app.services.task_service import (
     create_task_service,
@@ -57,7 +57,7 @@ def test_owner_editor_can_write(role):
 
 
 def test_viewer_cannot_write():
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ForbiddenException) as exc:
         require_task_write_access(WorkspaceRole.VIEWER)
 
     assert_http_error(exc, 403)
@@ -68,7 +68,7 @@ async def test_viewer_cannot_update_task():
     access = make_access(role=WorkspaceRole.VIEWER)
     db = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ForbiddenException) as exc:
         await update_task_service(
             db=db,
             data=TaskUpdate(title="Updated title"),
@@ -84,7 +84,7 @@ async def test_viewer_cannot_delete_task():
     access = make_access(role=WorkspaceRole.VIEWER)
     db = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ForbiddenException) as exc:
         await delete_task_service(
             db=db,
             access=access,
@@ -100,7 +100,7 @@ def test_archived_project_cannot_be_modified():
         status=ProjectStatus.ARCHIVED,
     )
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ConflictException) as exc:
         require_active_project(project)
 
     assert_http_error(exc, 409)
@@ -122,7 +122,7 @@ async def test_archived_project_cannot_update_task():
 
     db = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ConflictException) as exc:
         await update_task_service(
             db=db,
             data=TaskUpdate(title="Updated title"),
@@ -141,7 +141,7 @@ async def test_archived_project_cannot_delete_task():
 
     db = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ConflictException) as exc:
         await delete_task_service(
             db=db,
             access=access,
@@ -236,7 +236,7 @@ async def test_viewer_update_does_not_invalidate_cache():
             "app.services.task_service.invalidate_task_cache",
             new_callable=AsyncMock,
         ) as mock_invalidate,
-        pytest.raises(HTTPException),
+        pytest.raises(ForbiddenException) as exc,
     ):
         await update_task_service(
             db=db,
@@ -244,6 +244,7 @@ async def test_viewer_update_does_not_invalidate_cache():
             access=access,
         )
 
+    assert exc.value.status_code == 403
     db.commit.assert_not_awaited()
     mock_invalidate.assert_not_awaited()
 
@@ -260,12 +261,15 @@ async def test_archived_delete_does_not_invalidate_cache():
             "app.services.task_service.invalidate_task_cache",
             new_callable=AsyncMock,
         ) as mock_invalidate,
-        pytest.raises(HTTPException),
+        pytest.raises(ConflictException) as exc,
     ):
         await delete_task_service(
             db=db,
             access=access,
         )
 
+    assert exc.value.status_code == 409
+
+    db.delete.assert_not_awaited()
     db.commit.assert_not_awaited()
     mock_invalidate.assert_not_awaited()

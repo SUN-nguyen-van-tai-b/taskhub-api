@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.api_responses import CONFLICT, FORBIDDEN, UNAUTHORIZED, VALIDATION_ERROR
 from app.core.enums import TokenType
 from app.core.error_messages import ErrorMessages
 from app.core.exceptions import (
@@ -43,6 +44,11 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     "/register",
     status_code=status.HTTP_201_CREATED,
     response_model=UserResponse,
+    summary="Register a new user",
+    responses={
+        **CONFLICT,
+        **VALIDATION_ERROR,
+    },
 )
 async def register(
     user: UserCreate,
@@ -62,9 +68,9 @@ async def register(
     db.add(new_user)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise ConflictException(ErrorMessages.EMAIL_ALREADY_EXISTS)
+        raise ConflictException(ErrorMessages.EMAIL_ALREADY_EXISTS) from exc
 
     await db.refresh(new_user)
 
@@ -74,6 +80,12 @@ async def register(
 @router.post(
     "/login",
     response_model=TokenResponse,
+    summary="Login and issue access/refresh tokens",
+    responses={
+        **UNAUTHORIZED,
+        **FORBIDDEN,
+        **VALIDATION_ERROR,
+    },
 )
 async def login(
     credentials: UserLogin,
@@ -109,6 +121,11 @@ async def login(
 @router.post(
     "/refresh",
     response_model=TokenResponse,
+    summary="Rotate refresh token",
+    responses={
+        **UNAUTHORIZED,
+        **VALIDATION_ERROR,
+    },
 )
 async def refresh_token(
     data: RefreshTokenRequest,

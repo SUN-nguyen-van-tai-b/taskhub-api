@@ -2,11 +2,13 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import NotFoundException, UnauthorizedException
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.comment import Comment
@@ -25,10 +27,8 @@ async def get_current_user(
     ],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
+    credentials_exception = UnauthorizedException(
+        ErrorMessages.COULD_NOT_VALIDATE_CREDENTIALS
     )
 
     # 1. Kiểm tra credentials có tồn tại không
@@ -75,10 +75,7 @@ async def get_workspace_member(
     )
 
     if member is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Workspace not found",
-        )
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
 
     return member
 
@@ -100,10 +97,7 @@ async def get_project_access(
     project = await db.get(Project, project_id)
 
     if project is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Project not found",
-        )
+        raise NotFoundException(ErrorMessages.PROJECT_NOT_FOUND)
 
     # 2. Dùng workspace_id từ Project để kiểm tra membership.
     # Không phải thành viên thì không được truy cập Project.
@@ -113,10 +107,7 @@ async def get_project_access(
     )
 
     if member is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Project not found",
-        )
+        raise NotFoundException(ErrorMessages.PROJECT_NOT_FOUND)
 
     # 3. Trả cả hai object.
     # Endpoint dùng project để xử lý dữ liệu,
@@ -154,10 +145,7 @@ async def get_task_access(
     row = result.one_or_none()
 
     if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Task not found",
-        )
+        raise NotFoundException(ErrorMessages.TASK_NOT_FOUND)
 
     task, project, member = row
 
@@ -199,10 +187,7 @@ async def get_comment_access(
     row = result.one_or_none()
 
     if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Comment not found",
-        )
+        raise NotFoundException(ErrorMessages.COMMENT_NOT_FOUND)
 
     comment, project, member = row
 

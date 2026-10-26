@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import Date, DateTime, ForeignKey, String, Text, func
 from sqlalchemy import Enum as SQLEnum
@@ -8,14 +8,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"
     IN_REVIEW = "IN_REVIEW"
     DONE = "DONE"
 
 
-class TaskPriority(str, Enum):
+class TaskPriority(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"

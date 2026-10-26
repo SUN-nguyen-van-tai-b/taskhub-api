@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +12,11 @@ from app.core.dependencies import (
     get_task_access,
 )
 from app.core.error_messages import ErrorMessages
-from app.core.exceptions import ConflictException, ForbiddenException
+from app.core.exceptions import (
+    ConflictException,
+    ForbiddenException,
+    ValidationException,
+)
 from app.db.session import get_db
 from app.models.comment import Comment
 from app.models.project import Project, ProjectStatus
@@ -145,10 +149,7 @@ async def update_comment(
         content = update_data["content"]
 
         if content is None:
-            raise HTTPException(
-                status_code=422,
-                detail="Comment content cannot be null",
-            )
+            raise ValidationException(ErrorMessages.COMMENT_CONTENT_REQUIRED)
 
         access.comment.content = content
 

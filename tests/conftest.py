@@ -27,10 +27,9 @@ if not TEST_REDIS_URL.endswith("/1"):
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["REDIS_URL"] = TEST_REDIS_URL
 
-
-from app.db.redis import get_redis
-from app.db.session import get_db
-from app.main import app
+from app.db.redis import get_redis  # noqa: E402
+from app.db.session import get_db  # noqa: E402
+from app.main import app  # noqa: E402
 
 
 @pytest_asyncio.fixture

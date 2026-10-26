@@ -35,3 +35,6 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+
+.vscode/*
+!.vscode/settings.json

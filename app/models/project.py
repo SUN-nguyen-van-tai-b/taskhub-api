@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from app.models.workspace import Workspace
 
 
-class ProjectStatus(str, Enum):
+class ProjectStatus(StrEnum):
     ACTIVE = "ACTIVE"
     ARCHIVED = "ARCHIVED"
 

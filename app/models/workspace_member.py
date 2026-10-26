@@ -1,23 +1,17 @@
 from __future__ import annotations
 
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.enums import WorkspaceRole
 from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
     from app.models.workspace import Workspace
-
-
-class WorkspaceRole(str, Enum):
-    OWNER = "OWNER"
-    EDITOR = "EDITOR"
-    VIEWER = "VIEWER"
 
 
 class WorkspaceMember(Base):

@@ -2,10 +2,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.workspace_member import WorkspaceRole
+from app.core.enums import WorkspaceRole
+from app.schemas.base import BaseSchema
 
 
-class WorkspaceCreate(BaseModel):
+class WorkspaceCreate(BaseSchema):
     name: str = Field(min_length=2, max_length=150)
 
 
@@ -18,11 +19,11 @@ class WorkspaceResponse(BaseModel):
     created_at: datetime
 
 
-class WorkspaceUpdate(BaseModel):
+class WorkspaceUpdate(BaseSchema):
     name: str = Field(min_length=2, max_length=150)
 
 
-class WorkspaceMemberCreate(BaseModel):
+class WorkspaceMemberCreate(BaseSchema):
     user_id: int = Field(gt=0)
     role: WorkspaceRole
 
@@ -35,5 +36,5 @@ class WorkspaceMemberResponse(BaseModel):
     role: WorkspaceRole
 
 
-class WorkspaceMemberRoleUpdate(BaseModel):
+class WorkspaceMemberRoleUpdate(BaseSchema):
     role: WorkspaceRole

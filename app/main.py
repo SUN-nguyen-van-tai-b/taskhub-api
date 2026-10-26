@@ -24,10 +24,7 @@ async def lifespan(app: FastAPI):
         await engine.dispose()
 
 
-app = FastAPI(
-    title="TaskHub API",
-    version="1.0.0",
-)
+app = FastAPI(title="TaskHub API", version="1.0.0", lifespan=lifespan)
 
 register_request_logging(app)
 register_exception_handlers(app)
