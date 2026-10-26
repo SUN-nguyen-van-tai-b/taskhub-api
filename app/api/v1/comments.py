@@ -11,6 +11,8 @@ from app.core.dependencies import (
     get_current_user,
     get_task_access,
 )
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import ConflictException, ForbiddenException
 from app.db.session import get_db
 from app.models.comment import Comment
 from app.models.project import Project, ProjectStatus
@@ -28,19 +30,13 @@ router = APIRouter(tags=["Comments"])
 
 def require_active_project(project: Project) -> None:
     if project.status == ProjectStatus.ARCHIVED:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot modify comments in archived project",
-        )
+        raise ConflictException(ErrorMessages.PROJECT_ARCHIVED)
 
 
 def require_comment_create_permission(role: WorkspaceRole) -> None:
     # VIEWER không được tạo Comment.
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise HTTPException(
-            status_code=403,
-            detail="Insufficient permissions",
-        )
+        raise ForbiddenException(ErrorMessages.FORBIDDEN)
 
 
 def require_comment_edit_permission(
@@ -56,10 +52,7 @@ def require_comment_edit_permission(
     if role == WorkspaceRole.EDITOR and comment.created_by == current_user_id:
         return
 
-    raise HTTPException(
-        status_code=403,
-        detail="You cannot modify this comment",
-    )
+    raise ForbiddenException(ErrorMessages.FORBIDDEN_COMMENT)
 
 
 @router.post(

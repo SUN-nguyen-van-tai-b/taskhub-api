@@ -24,13 +24,14 @@ class WorkspaceMember(Base):
     __tablename__ = "workspace_members"
 
     workspace_id: Mapped[int] = mapped_column(
-        ForeignKey("workspaces.id"),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
         primary_key=True,
     )
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     )
 
     role: Mapped[WorkspaceRole] = mapped_column(

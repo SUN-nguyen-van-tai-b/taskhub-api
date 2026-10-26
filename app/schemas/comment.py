@@ -2,8 +2,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.base import BaseSchema
 
-class CommentCreate(BaseModel):
+
+class CommentCreate(BaseSchema):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     content: str = Field(
@@ -12,7 +14,7 @@ class CommentCreate(BaseModel):
     )
 
 
-class CommentUpdate(BaseModel):
+class CommentUpdate(BaseSchema):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     # Không gửi content -> không thay đổi.

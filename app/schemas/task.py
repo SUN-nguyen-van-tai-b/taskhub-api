@@ -3,9 +3,10 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.task import TaskPriority, TaskStatus
+from app.schemas.base import BaseSchema
 
 
-class TaskCreate(BaseModel):
+class TaskCreate(BaseSchema):
     title: str = Field(min_length=2, max_length=200)
     description: str | None = None
     assignee_id: int | None = Field(default=None, gt=0)
@@ -28,7 +29,7 @@ class TaskResponse(BaseModel):
     created_at: datetime
 
 
-class TaskUpdate(BaseModel):
+class TaskUpdate(BaseSchema):
     title: str | None = Field(default=None, min_length=2, max_length=200)
     description: str | None = None
     status: TaskStatus | None = None

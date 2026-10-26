@@ -3,17 +3,31 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.core.exceptions import AppException
+
 logger = logging.getLogger("taskhub.errors")
 
 
 def register_exception_handlers(app: FastAPI) -> None:
 
+    # 1. Xử lý các lỗi nghiệp vụ.
+    @app.exception_handler(AppException)
+    async def app_error_handler(
+        request: Request,
+        exc: AppException,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.message},
+            headers=exc.headers,
+        )
+
+    # 2. Xử lý lỗi không mong muốn.
     @app.exception_handler(Exception)
     async def unexpected_error_handler(
         request: Request,
         exc: Exception,
-    ):
-        # Ghi traceback để developer kiểm tra.
+    ) -> JSONResponse:
         logger.error(
             "Unhandled error | method=%s | path=%s",
             request.method,
@@ -21,7 +35,6 @@ def register_exception_handlers(app: FastAPI) -> None:
             exc_info=(type(exc), exc, exc.__traceback__),
         )
 
-        # Không đưa thông tin lỗi nội bộ cho frontend.
         return JSONResponse(
             status_code=500,
             content={
