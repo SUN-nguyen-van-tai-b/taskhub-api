@@ -2,10 +2,17 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.api_responses import (
+    CONFLICT,
+    FORBIDDEN,
+    NOT_FOUND,
+    UNAUTHORIZED,
+    VALIDATION_ERROR,
+)
 from app.core.dependencies import (
     ProjectAccess,
     TaskAccess,
@@ -19,6 +26,7 @@ from app.core.exceptions import (
     NotFoundException,
     ValidationException,
 )
+from app.core.pagination import Pagination
 from app.core.permissions import require_active_project, require_write_access
 from app.db.session import get_db
 from app.models.label import Label
@@ -26,9 +34,19 @@ from app.models.project import Project
 from app.models.task_label import TaskLabel
 from app.models.user import User
 from app.models.workspace_member import WorkspaceMember
+from app.schemas.base import PageSchema
 from app.schemas.label import LabelCreate, LabelResponse, LabelUpdate
 
-router = APIRouter(tags=["Labels"])
+router = APIRouter(
+    tags=["Labels"],
+    responses={
+        **UNAUTHORIZED,
+        **FORBIDDEN,
+        **NOT_FOUND,
+        **CONFLICT,
+        **VALIDATION_ERROR,
+    },
+)
 
 
 @dataclass
@@ -78,6 +96,7 @@ async def get_label_access(
     "/projects/{project_id}/labels",
     response_model=LabelResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create a project label",
 )
 async def create_label(
     project_id: int,
@@ -119,26 +138,43 @@ async def create_label(
 
 @router.get(
     "/projects/{project_id}/labels",
-    response_model=list[LabelResponse],
+    response_model=PageSchema[LabelResponse],
+    summary="List labels in a project",
 )
 async def list_labels(
     project_id: int,
     access: Annotated[ProjectAccess, Depends(get_project_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    pagination: Pagination,
 ):
     # OWNER/EDITOR/VIEWER đều được xem.
     # Chỉ lấy Label thuộc Project đang truy cập.
+    total = (
+        await db.scalar(
+            select(func.count(Label.id)).where(Label.project_id == project_id)
+        )
+        or 0
+    )
     result = await db.scalars(
         select(Label)
         .where(Label.project_id == project_id)
         .order_by(Label.name.asc(), Label.id.asc())
+        .offset(pagination.offset)
+        .limit(pagination.page_size)
     )
-    return result.all()
+    return PageSchema[LabelResponse](
+        items=list(result.all()),
+        total=total,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        total_pages=pagination.total_pages(total),
+    )
 
 
 @router.patch(
     "/labels/{label_id}",
     response_model=LabelResponse,
+    summary="Update a label",
 )
 async def update_label(
     data: LabelUpdate,
@@ -172,6 +208,7 @@ async def update_label(
 @router.delete(
     "/labels/{label_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a label",
 )
 async def delete_label(
     access: Annotated[LabelAccess, Depends(get_label_access)],
@@ -190,6 +227,7 @@ async def delete_label(
 @router.post(
     "/tasks/{task_id}/labels/{label_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="Attach a label to a task",
 )
 async def attach_label_to_task(
     label_id: int,
@@ -227,6 +265,7 @@ async def attach_label_to_task(
 @router.delete(
     "/tasks/{task_id}/labels/{label_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="Detach a label from a task",
 )
 async def detach_label_from_task(
     label_id: int,
@@ -251,15 +290,17 @@ async def detach_label_from_task(
 # 7. LIST LABELS OF TASK
 @router.get(
     "/tasks/{task_id}/labels",
-    response_model=list[LabelResponse],
+    response_model=PageSchema[LabelResponse],
+    summary="List labels attached to a task",
 )
 async def list_task_labels(
     access: Annotated[TaskAccess, Depends(get_task_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    pagination: Pagination,
 ):
     # Dùng JOIN để lấy Label thông qua bảng task_labels.
     # Không cần khai báo relationship ORM cho trường hợp này.
-    result = await db.scalars(
+    label_query = (
         select(Label)
         .join(TaskLabel, TaskLabel.label_id == Label.id)
         .where(
@@ -268,4 +309,16 @@ async def list_task_labels(
         )
         .order_by(Label.name.asc(), Label.id.asc())
     )
-    return result.all()
+    total = (
+        await db.scalar(select(func.count()).select_from(label_query.subquery())) or 0
+    )
+    result = await db.scalars(
+        label_query.offset(pagination.offset).limit(pagination.page_size)
+    )
+    return PageSchema[LabelResponse](
+        items=list(result.all()),
+        total=total,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        total_pages=pagination.total_pages(total),
+    )

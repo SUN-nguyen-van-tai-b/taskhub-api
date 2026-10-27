@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Health"])
 
 
-@router.get("/health")
+@router.get(
+    "/health",
+    summary="Check API and dependency health",
+    responses={503: {"description": "One or more dependencies are unavailable"}},
+)
 async def health_check(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):

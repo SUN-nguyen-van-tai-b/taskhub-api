@@ -4,6 +4,12 @@ from fastapi import APIRouter, Depends, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.api_responses import (
+    BAD_REQUEST,
+    FORBIDDEN,
+    UNAUTHORIZED,
+    VALIDATION_ERROR,
+)
 from app.core.dependencies import get_current_user
 from app.core.error_messages import ErrorMessages
 from app.core.exceptions import BadRequestException
@@ -14,17 +20,26 @@ from app.models.user import User
 from app.schemas.user import ChangePasswordRequest, UserResponse, UserUpdate
 from app.services.token_service import revoke_all_refresh_tokens
 
-router = APIRouter(prefix="/users", tags=["Users"])
+router = APIRouter(
+    prefix="/users",
+    tags=["Users"],
+    responses={
+        **BAD_REQUEST,
+        **FORBIDDEN,
+        **UNAUTHORIZED,
+        **VALIDATION_ERROR,
+    },
+)
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserResponse, summary="Get the current user")
 async def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     return current_user
 
 
-@router.patch("/me", response_model=UserResponse)
+@router.patch("/me", response_model=UserResponse, summary="Update the current user")
 async def update_me(
     data: UserUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -46,6 +61,7 @@ async def update_me(
 @router.post(
     "/me/change-password",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="Change the current user's password",
 )
 async def change_password(
     data: ChangePasswordRequest,

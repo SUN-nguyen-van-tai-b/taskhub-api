@@ -4,6 +4,13 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.api_responses import (
+    CONFLICT,
+    FORBIDDEN,
+    NOT_FOUND,
+    UNAUTHORIZED,
+    VALIDATION_ERROR,
+)
 from app.core.dependencies import (
     CommentAccess,
     TaskAccess,
@@ -28,7 +35,16 @@ from app.schemas.comment import (
     CommentUpdate,
 )
 
-router = APIRouter(tags=["Comments"])
+router = APIRouter(
+    tags=["Comments"],
+    responses={
+        **UNAUTHORIZED,
+        **FORBIDDEN,
+        **NOT_FOUND,
+        **CONFLICT,
+        **VALIDATION_ERROR,
+    },
+)
 
 
 def require_comment_edit_permission(
@@ -51,6 +67,7 @@ def require_comment_edit_permission(
     "/tasks/{task_id}/comments",
     response_model=CommentResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create a task comment",
 )
 async def create_comment(
     data: CommentCreate,
@@ -77,6 +94,7 @@ async def create_comment(
 @router.get(
     "/tasks/{task_id}/comments",
     response_model=CommentPage,
+    summary="List comments on a task",
 )
 async def list_comments(
     access: Annotated[TaskAccess, Depends(get_task_access)],
@@ -117,6 +135,7 @@ async def list_comments(
 @router.patch(
     "/comments/{comment_id}",
     response_model=CommentResponse,
+    summary="Update a comment",
 )
 async def update_comment(
     data: CommentUpdate,
@@ -150,6 +169,7 @@ async def update_comment(
 @router.delete(
     "/comments/{comment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a comment",
 )
 async def delete_comment(
     access: Annotated[CommentAccess, Depends(get_comment_access)],

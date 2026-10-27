@@ -60,7 +60,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     op.drop_constraint(
-        "workspaces_owner_id_fkey",
+        op.f("workspaces_owner_id_fkey"),
         "workspaces",
         type_="foreignkey",
     )
@@ -69,12 +69,12 @@ def downgrade() -> None:
     )
     op.drop_index(op.f("ix_workspaces_owner_id"), table_name="workspaces")
     op.drop_constraint(
-        "workspace_members_user_id_fkey",
+        op.f("workspace_members_user_id_fkey"),
         "workspace_members",
         type_="foreignkey",
     )
     op.drop_constraint(
-        "workspace_members_workspace_id_fkey",
+        op.f("workspace_members_workspace_id_fkey"),
         "workspace_members",
         type_="foreignkey",
     )

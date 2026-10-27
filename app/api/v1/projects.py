@@ -1,27 +1,30 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.api_responses import NOT_FOUND, UNAUTHORIZED, VALIDATION_ERROR
+from app.core.api_responses import (
+    CONFLICT,
+    FORBIDDEN,
+    NOT_FOUND,
+    UNAUTHORIZED,
+    VALIDATION_ERROR,
+)
 from app.core.dependencies import (
     ProjectAccess,
     get_project_access,
     get_workspace_member,
 )
 from app.core.error_messages import ErrorMessages
-from app.core.exceptions import (
-    ForbiddenException,
-    ValidationException,
-)
+from app.core.exceptions import ValidationException
 from app.core.pagination import Pagination
 from app.core.permissions import require_write_access
 from app.db.session import get_db
 from app.models.project import Project, ProjectStatus
 from app.models.workspace_member import WorkspaceMember
+from app.schemas.base import PageSchema
 from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
-from app.schemas.workspace import WorkspaceRole
 
 router = APIRouter(tags=["Projects"])
 
@@ -30,6 +33,8 @@ router = APIRouter(tags=["Projects"])
     "/workspaces/{workspace_id}/projects",
     response_model=ProjectResponse,
     status_code=201,
+    summary="Create a project in a workspace",
+    responses={**UNAUTHORIZED, **FORBIDDEN, **NOT_FOUND, **VALIDATION_ERROR},
 )
 async def create_project(
     workspace_id: int,
@@ -55,7 +60,7 @@ async def create_project(
 
 @router.get(
     "/workspaces/{workspace_id}/projects",
-    response_model=list[ProjectResponse],
+    response_model=PageSchema[ProjectResponse],
     dependencies=[Depends(get_workspace_member)],
     summary="List projects in a workspace",
     responses={
@@ -68,7 +73,13 @@ async def list_projects(
     workspace_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     pagination: Pagination,
-) -> list[Project]:
+) -> PageSchema[ProjectResponse]:
+    total = (
+        await db.scalar(
+            select(func.count(Project.id)).where(Project.workspace_id == workspace_id)
+        )
+        or 0
+    )
     query = (
         select(Project)
         .where(Project.workspace_id == workspace_id)
@@ -81,12 +92,20 @@ async def list_projects(
     )
 
     result = await db.scalars(query)
-    return list(result.all())
+    return PageSchema[ProjectResponse](
+        items=list(result.all()),
+        total=total,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        total_pages=pagination.total_pages(total),
+    )
 
 
 @router.get(
     "/projects/{project_id}",
     response_model=ProjectResponse,
+    summary="Get project details",
+    responses={**UNAUTHORIZED, **NOT_FOUND},
 )
 async def get_project(
     access: Annotated[ProjectAccess, Depends(get_project_access)],
@@ -97,6 +116,13 @@ async def get_project(
 @router.patch(
     "/projects/{project_id}",
     response_model=ProjectResponse,
+    summary="Update project details",
+    responses={
+        **UNAUTHORIZED,
+        **FORBIDDEN,
+        **NOT_FOUND,
+        **VALIDATION_ERROR,
+    },
 )
 async def update_project(
     data: ProjectUpdate,
@@ -127,16 +153,20 @@ async def update_project(
 @router.post(
     "/projects/{project_id}/archive",
     response_model=ProjectResponse,
+    summary="Archive project details",
+    responses={
+        **UNAUTHORIZED,
+        **FORBIDDEN,
+        **NOT_FOUND,
+        **VALIDATION_ERROR,
+        **CONFLICT,
+    },
 )
 async def archive_project(
     access: Annotated[ProjectAccess, Depends(get_project_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    if access.member.role not in (
-        WorkspaceRole.OWNER,
-        WorkspaceRole.EDITOR,
-    ):
-        raise ForbiddenException(ErrorMessages.FORBIDDEN)
+    require_write_access(access.member.role)
 
     access.project.status = ProjectStatus.ARCHIVED
 

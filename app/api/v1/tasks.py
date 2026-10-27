@@ -3,6 +3,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.api_responses import (
+    CONFLICT,
+    FORBIDDEN,
+    NOT_FOUND,
+    UNAUTHORIZED,
+    VALIDATION_ERROR,
+)
 from app.core.dependencies import (
     ProjectAccess,
     TaskAccess,
@@ -26,13 +33,23 @@ from app.services.task_service import (
     update_task_service,
 )
 
-router = APIRouter(tags=["Tasks"])
+router = APIRouter(
+    tags=["Tasks"],
+    responses={
+        **UNAUTHORIZED,
+        **FORBIDDEN,
+        **NOT_FOUND,
+        **CONFLICT,
+        **VALIDATION_ERROR,
+    },
+)
 
 
 @router.post(
     "/projects/{project_id}/tasks",
     response_model=TaskResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create a task",
 )
 async def create_task(
     project_id: int,
@@ -53,6 +70,7 @@ async def create_task(
 @router.get(
     "/tasks/{task_id}",
     response_model=TaskResponse,
+    summary="Get task details",
 )
 async def get_task(
     access: Annotated[
@@ -66,6 +84,7 @@ async def get_task(
 @router.get(
     "/projects/{project_id}/tasks",
     response_model=TaskPage,
+    summary="List and filter project tasks",
 )
 async def list_tasks(
     project_id: int,
@@ -105,6 +124,7 @@ async def list_tasks(
 @router.patch(
     "/tasks/{task_id}",
     response_model=TaskResponse,
+    summary="Update a task",
 )
 async def update_task(
     data: TaskUpdate,
@@ -124,6 +144,7 @@ async def update_task(
 @router.delete(
     "/tasks/{task_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a task",
 )
 async def delete_task(
     access: Annotated[

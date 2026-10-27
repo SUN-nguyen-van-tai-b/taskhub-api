@@ -2,11 +2,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.constants import MAX_LABEL_NAME_LENGTH
 from app.schemas.base import BaseSchema
 
 
 class LabelCreate(BaseSchema):
-    name: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=MAX_LABEL_NAME_LENGTH)
 
     color: str = Field(
         default="#6B7280",
@@ -18,7 +19,7 @@ class LabelUpdate(BaseSchema):
     name: str | None = Field(
         default=None,
         min_length=1,
-        max_length=100,
+        max_length=MAX_LABEL_NAME_LENGTH,
     )
     color: str | None = Field(
         default=None,

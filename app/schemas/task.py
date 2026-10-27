@@ -3,7 +3,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.task import TaskPriority, TaskStatus
-from app.schemas.base import BaseSchema
+from app.schemas.base import BaseSchema, PageSchema
 
 
 class TaskCreate(BaseSchema):
@@ -38,12 +38,8 @@ class TaskUpdate(BaseSchema):
     due_date: date | None = None
 
 
-class TaskPage(BaseModel):
-    items: list[TaskResponse]
-    total: int
-    page: int
-    page_size: int
-    total_pages: int
+class TaskPage(PageSchema[TaskResponse]):
+    pass
 
 
 class TaskFilters(BaseModel):

@@ -10,9 +10,10 @@ from pydantic import (
 )
 
 from app.core.constants import MAX_PASSWORD_LENGTH
+from app.schemas.base import BaseSchema
 
 
-class UserCreate(BaseModel):
+class UserCreate(BaseSchema):
     email: EmailStr
     full_name: str = Field(min_length=2, max_length=100)
     password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)
@@ -37,7 +38,7 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(BaseSchema):
     full_name: str | None = Field(
         default=None,
         min_length=2,
@@ -52,6 +53,6 @@ class UserUpdate(BaseModel):
         return self
 
 
-class ChangePasswordRequest(BaseModel):
+class ChangePasswordRequest(BaseSchema):
     old_password: str
     new_password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)

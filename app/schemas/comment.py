@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.constants import MAX_CONTENT_COMMENT_LENGTH
-from app.schemas.base import BaseSchema
+from app.schemas.base import BaseSchema, PageSchema
 
 
 class CommentCreate(BaseSchema):
@@ -38,9 +38,5 @@ class CommentResponse(BaseModel):
     updated_at: datetime
 
 
-class CommentPage(BaseModel):
-    items: list[CommentResponse]
-    total: int
-    page: int
-    page_size: int
-    total_pages: int
+class CommentPage(PageSchema[CommentResponse]):
+    pass

@@ -168,7 +168,12 @@ async def refresh_token(
     )
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke a refresh token",
+    responses={**UNAUTHORIZED, **VALIDATION_ERROR},
+)
 async def logout(
     data: LogoutRequest,
     redis: Annotated[Redis, Depends(get_redis)],
