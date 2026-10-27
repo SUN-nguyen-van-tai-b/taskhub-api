@@ -16,32 +16,19 @@ from app.core.dependencies import (
 from app.core.error_messages import ErrorMessages
 from app.core.exceptions import (
     ConflictException,
-    ForbiddenException,
     NotFoundException,
     ValidationException,
 )
+from app.core.permissions import require_active_project, require_write_access
 from app.db.session import get_db
 from app.models.label import Label
-from app.models.project import Project, ProjectStatus
+from app.models.project import Project
 from app.models.task_label import TaskLabel
 from app.models.user import User
-from app.models.workspace_member import WorkspaceMember, WorkspaceRole
+from app.models.workspace_member import WorkspaceMember
 from app.schemas.label import LabelCreate, LabelResponse, LabelUpdate
 
 router = APIRouter(tags=["Labels"])
-
-
-def require_label_write_access(role: WorkspaceRole) -> None:
-    # Tách logic kiểm tra quyền thành một hàm dùng chung.
-    # OWNER/EDITOR được chỉnh sửa Labels, VIEWER chỉ được xem.
-    if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise ForbiddenException(ErrorMessages.FORBIDDEN)
-
-
-def require_active_project(project: Project) -> None:
-    # Project đã archive chỉ cho đọc dữ liệu.
-    if project.status == ProjectStatus.ARCHIVED:
-        raise ConflictException(ErrorMessages.PROJECT_ARCHIVED)
 
 
 @dataclass
@@ -98,7 +85,7 @@ async def create_label(
     access: Annotated[ProjectAccess, Depends(get_project_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_label_write_access(access.member.role)
+    require_write_access(access.member.role)
     require_active_project(access.project)
 
     # Kiểm tra trùng tên để trả lỗi dễ hiểu.
@@ -158,7 +145,7 @@ async def update_label(
     access: Annotated[LabelAccess, Depends(get_label_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_label_write_access(access.member.role)
+    require_write_access(access.member.role)
     require_active_project(access.project)
 
     # Không gửi field -> giữ nguyên.
@@ -190,7 +177,7 @@ async def delete_label(
     access: Annotated[LabelAccess, Depends(get_label_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_label_write_access(access.member.role)
+    require_write_access(access.member.role)
     require_active_project(access.project)
 
     # FK ondelete=CASCADE xóa các dòng task_labels
@@ -209,7 +196,7 @@ async def attach_label_to_task(
     access: Annotated[TaskAccess, Depends(get_task_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_label_write_access(access.member.role)
+    require_write_access(access.member.role)
     require_active_project(access.project)
 
     label = await db.get(Label, label_id)
@@ -246,7 +233,7 @@ async def detach_label_from_task(
     access: Annotated[TaskAccess, Depends(get_task_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_label_write_access(access.member.role)
+    require_write_access(access.member.role)
     require_active_project(access.project)
 
     # Chỉ xóa liên kết, không xóa bản ghi Label.

@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.constants import MAX_CONTENT_COMMENT_LENGTH
 from app.schemas.base import BaseSchema
 
 
@@ -10,7 +11,7 @@ class CommentCreate(BaseSchema):
 
     content: str = Field(
         min_length=1,
-        max_length=5000,
+        max_length=MAX_CONTENT_COMMENT_LENGTH,
     )
 
 
@@ -22,7 +23,7 @@ class CommentUpdate(BaseSchema):
     content: str | None = Field(
         default=None,
         min_length=1,
-        max_length=5000,
+        max_length=MAX_CONTENT_COMMENT_LENGTH,
     )
 
 

@@ -63,7 +63,3 @@ async def write_task_cache(key: str, data: dict) -> None:
 
     except (RedisError, ValueError, TypeError):
         logger.warning("Failed to write task cache", exc_info=True)
-
-
-async def close_redis() -> None:
-    await redis_client.aclose()

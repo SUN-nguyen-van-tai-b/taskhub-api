@@ -59,4 +59,7 @@ def decode_token(token: str) -> dict:
         token,
         settings.SECRET_KEY,
         algorithms=[settings.JWT_ALGORITHM],
+        options={
+            "require": ["exp", "sub", "jti", "type"],
+        },
     )

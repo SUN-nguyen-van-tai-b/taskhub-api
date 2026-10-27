@@ -25,6 +25,7 @@ class ErrorMessages:
     TASK_LABEL_ASSOCIATION_NOT_FOUND = "Task label association not found"
     LABEL_ATTACH_CONFLICT = "Unable to attach label"
 
+    VALIDATION_FAILED = "Validation failed"
     WRONG_PASSWORD = "Wrong password"
     NEW_PASSWORD_MUST_BE_DIFFERENT = "New password must be different from old password"
     ONLY_OWNER_CAN_UPDATE_WORKSPACE = "Only OWNER can update workspace"

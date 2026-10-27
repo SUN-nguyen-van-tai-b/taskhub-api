@@ -38,3 +38,8 @@ logs/
 
 .vscode/*
 !.vscode/settings.json
+
+# Database backups
+*.dump
+*.sql.gz
+*.backup

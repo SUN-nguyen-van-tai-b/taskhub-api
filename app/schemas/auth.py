@@ -1,9 +1,11 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.core.constants import MAX_PASSWORD_LENGTH
+
 
 class UserLogin(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8, max_length=50)
+    password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)
 
     @field_validator("email")
     @classmethod

@@ -12,6 +12,11 @@ class UserRole(StrEnum):
 
 
 class WorkspaceRole(StrEnum):
-    OWNER = "owner"
-    EDITOR = "editor"
-    VIEWER = "viewer"
+    OWNER = "OWNER"
+    EDITOR = "EDITOR"
+    VIEWER = "VIEWER"
+
+
+class ProjectStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"

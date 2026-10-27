@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.enums import TokenType
 from app.core.error_messages import ErrorMessages
 from app.core.exceptions import NotFoundException, UnauthorizedException
 from app.core.security import decode_token
@@ -45,7 +46,7 @@ async def get_current_user(
         raise credentials_exception from exc
 
     # 4. Kiểm tra type == "access"
-    if payload.get("type") != "access":
+    if payload.get("type") != TokenType.ACCESS:
         raise credentials_exception
 
     # 5. Validate sub là chuỗi số hợp lệ

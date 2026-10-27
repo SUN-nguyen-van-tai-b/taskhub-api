@@ -9,11 +9,13 @@ from pydantic import (
     model_validator,
 )
 
+from app.core.constants import MAX_PASSWORD_LENGTH
+
 
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=2, max_length=100)
-    password: str = Field(min_length=8, max_length=50)
+    password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)
 
     @field_validator("email", mode="after")
     @classmethod
@@ -52,4 +54,4 @@ class UserUpdate(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     old_password: str
-    new_password: str = Field(min_length=8, max_length=50)
+    new_password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)

@@ -113,3 +113,29 @@ async def test_refresh_token_rotation(
     )
 
     assert third_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_register_invalid_input_returns_422(
+    client: AsyncClient,
+):
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "invalid-email",
+            "full_name": "Test User",
+            "password": "123",
+        },
+    )
+
+    assert response.status_code == 422
+
+    body = response.json()
+
+    assert body["detail"] == "Validation failed"
+    assert "errors" in body
+
+    fields = {error["field"] for error in body["errors"]}
+
+    assert "body.email" in fields
+    assert "body.password" in fields

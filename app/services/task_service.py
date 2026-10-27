@@ -6,20 +6,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import ProjectAccess, TaskAccess
-from app.core.enums import WorkspaceRole
 from app.core.error_messages import ErrorMessages
 from app.core.exceptions import (
-    ConflictException,
-    ForbiddenException,
     ValidationException,
 )
+from app.core.permissions import require_active_project, require_write_access
 from app.core.redis_cache import (
     get_task_cache_version,
     invalidate_task_cache,
     read_task_cache,
     write_task_cache,
 )
-from app.models.project import Project, ProjectStatus
 from app.models.task import Task
 from app.models.user import User
 from app.models.workspace_member import WorkspaceMember
@@ -31,18 +28,6 @@ from app.schemas.task import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def require_task_write_access(role: WorkspaceRole) -> None:
-    # VIEWER chỉ được xem Task.
-    if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise ForbiddenException(ErrorMessages.FORBIDDEN)
-
-
-def require_active_project(project: Project) -> None:
-    # Project đã archive không được thay đổi Task.
-    if project.status == ProjectStatus.ARCHIVED:
-        raise ConflictException(ErrorMessages.CANNOT_MODIFY_ARCHIVED_PROJECT_TASKS)
 
 
 async def validate_assignee(
@@ -75,7 +60,7 @@ async def create_task_service(
     data: TaskCreate,
     access: ProjectAccess,
 ) -> Task:
-    require_task_write_access(access.member.role)
+    require_write_access(access.member.role)
     require_active_project(access.project)
 
     await validate_assignee(
@@ -231,7 +216,7 @@ async def update_task_service(
     data: TaskUpdate,
     access: TaskAccess,
 ) -> Task:
-    require_task_write_access(access.member.role)
+    require_write_access(access.member.role)
     require_active_project(access.project)
 
     # PATCH: chỉ lấy những field frontend đã gửi.
@@ -283,7 +268,7 @@ async def delete_task_service(
     access: TaskAccess,
 ) -> None:
     # Chỉ OWNER/EDITOR được xóa.
-    require_task_write_access(access.member.role)
+    require_write_access(access.member.role)
 
     # Không được xóa Task trong Project ARCHIVED.
     require_active_project(access.project)

@@ -4,21 +4,21 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.api_responses import NOT_FOUND, UNAUTHORIZED, VALIDATION_ERROR
 from app.core.dependencies import (
     ProjectAccess,
-    get_current_user,
     get_project_access,
     get_workspace_member,
 )
 from app.core.error_messages import ErrorMessages
 from app.core.exceptions import (
     ForbiddenException,
-    NotFoundException,
     ValidationException,
 )
+from app.core.pagination import Pagination
+from app.core.permissions import require_write_access
 from app.db.session import get_db
 from app.models.project import Project, ProjectStatus
-from app.models.user import User
 from app.models.workspace_member import WorkspaceMember
 from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 from app.schemas.workspace import WorkspaceRole
@@ -37,8 +37,8 @@ async def create_project(
     member: Annotated[WorkspaceMember, Depends(get_workspace_member)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    if member.role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise ForbiddenException(ErrorMessages.FORBIDDEN)
+
+    require_write_access(member.role)
 
     project = Project(
         workspace_id=workspace_id,
@@ -57,25 +57,33 @@ async def create_project(
     "/workspaces/{workspace_id}/projects",
     response_model=list[ProjectResponse],
     dependencies=[Depends(get_workspace_member)],
+    summary="List projects in a workspace",
+    responses={
+        **UNAUTHORIZED,
+        **NOT_FOUND,
+        **VALIDATION_ERROR,
+    },
 )
 async def list_projects(
     workspace_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-):
+    pagination: Pagination,
+) -> list[Project]:
     query = (
         select(Project)
         .where(Project.workspace_id == workspace_id)
-        .order_by(Project.created_at.desc())
+        .order_by(
+            Project.created_at.desc(),
+            Project.id.desc(),
+        )
+        .offset(pagination.offset)
+        .limit(pagination.page_size)
     )
 
     result = await db.scalars(query)
-    return result.all()
+    return list(result.all())
 
 
-@router.get(
-    "/projects/{project_id}",
-    response_model=ProjectResponse,
-)
 @router.get(
     "/projects/{project_id}",
     response_model=ProjectResponse,
@@ -91,32 +99,17 @@ async def get_project(
     response_model=ProjectResponse,
 )
 async def update_project(
-    project_id: int,
     data: ProjectUpdate,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: Annotated[ProjectAccess, Depends(get_project_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
-):
-    project = await db.get(Project, project_id)
+) -> Project:
+    project = access.project
 
-    if project is None:
-        raise NotFoundException(ErrorMessages.PROJECT_NOT_FOUND)
-
-    member = await db.get(
-        WorkspaceMember,
-        (project.workspace_id, current_user.id),
-    )
-
-    if member is None:
-        raise NotFoundException(ErrorMessages.PROJECT_NOT_FOUND)
-
-    if member.role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise ForbiddenException(ErrorMessages.FORBIDDEN)
+    require_write_access(access.member.role)
 
     update_data = data.model_dump(exclude_unset=True)
 
-    # name trong DB không cho phép NULL.
-    # exclude_unset chỉ bỏ field không được gửi;
-    # nó không tự loại bỏ name=null.
+    # Không cho phép name = null.
     if "name" in update_data and update_data["name"] is None:
         raise ValidationException(
             ErrorMessages.REQUIRED_FIELD_CANNOT_BE_NULL.format(field="name")

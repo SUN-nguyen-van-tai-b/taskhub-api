@@ -13,13 +13,12 @@ from app.core.dependencies import (
 )
 from app.core.error_messages import ErrorMessages
 from app.core.exceptions import (
-    ConflictException,
     ForbiddenException,
     ValidationException,
 )
+from app.core.permissions import require_active_project, require_write_access
 from app.db.session import get_db
 from app.models.comment import Comment
-from app.models.project import Project, ProjectStatus
 from app.models.user import User
 from app.models.workspace_member import WorkspaceRole
 from app.schemas.comment import (
@@ -30,17 +29,6 @@ from app.schemas.comment import (
 )
 
 router = APIRouter(tags=["Comments"])
-
-
-def require_active_project(project: Project) -> None:
-    if project.status == ProjectStatus.ARCHIVED:
-        raise ConflictException(ErrorMessages.PROJECT_ARCHIVED)
-
-
-def require_comment_create_permission(role: WorkspaceRole) -> None:
-    # VIEWER không được tạo Comment.
-    if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise ForbiddenException(ErrorMessages.FORBIDDEN)
 
 
 def require_comment_edit_permission(
@@ -70,7 +58,7 @@ async def create_comment(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_comment_create_permission(access.member.role)
+    require_write_access(access.member.role)
     require_active_project(access.project)
 
     comment = Comment(

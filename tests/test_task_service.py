@@ -5,13 +5,12 @@ import pytest
 
 from app.core.enums import WorkspaceRole
 from app.core.exceptions import ConflictException, ForbiddenException
+from app.core.permissions import require_active_project, require_write_access
 from app.models.project import ProjectStatus
 from app.schemas.task import TaskCreate, TaskUpdate
 from app.services.task_service import (
     create_task_service,
     delete_task_service,
-    require_active_project,
-    require_task_write_access,
     update_task_service,
 )
 
@@ -53,12 +52,12 @@ def assert_http_error(exc_info, expected_status):
     [WorkspaceRole.OWNER, WorkspaceRole.EDITOR],
 )
 def test_owner_editor_can_write(role):
-    require_task_write_access(role)
+    require_write_access(role)
 
 
 def test_viewer_cannot_write():
     with pytest.raises(ForbiddenException) as exc:
-        require_task_write_access(WorkspaceRole.VIEWER)
+        require_write_access(WorkspaceRole.VIEWER)
 
     assert_http_error(exc, 403)
 
