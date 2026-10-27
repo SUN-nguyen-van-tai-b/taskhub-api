@@ -22,6 +22,6 @@ def require_write_access(role: WorkspaceRole) -> None:
 
 
 def require_active_project(project: Project) -> None:
-    # Project đã archive không được thay đổi Task.
+    # Project đã archive không được chỉnh sửa.
     if project.status == ProjectStatus.ARCHIVED:
-        raise ConflictException(ErrorMessages.CANNOT_MODIFY_ARCHIVED_PROJECT_TASKS)
+        raise ConflictException(ErrorMessages.PROJECT_ARCHIVED)

@@ -146,7 +146,7 @@ async def list_workspaces(
         total=total,
         page=pagination.page,
         page_size=pagination.page_size,
-        total_pages=(total + pagination.page_size - 1) // pagination.page_size,
+        total_pages=pagination.total_pages(total),
     )
 
 
@@ -313,7 +313,7 @@ async def add_workspace_member(
     # Nên kiểm tra is_active để không mời tài khoản bị khóa.
     user = await db.get(User, data.user_id)
     if user is None or not user.is_active:
-        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.USER_NOT_FOUND)
     # Bước 6: Kiểm tra User đã là thành viên chưa.
     # Dùng db.get(WorkspaceMember, (workspace_id, data.user_id)).
     # Tại sao? Composite primary key không cho phép
@@ -376,7 +376,7 @@ async def list_workspace_members(
         total=total,
         page=pagination.page,
         page_size=pagination.page_size,
-        total_pages=(total + pagination.page_size - 1) // pagination.page_size,
+        total_pages=pagination.total_pages(total),
     )
 
 
@@ -487,13 +487,13 @@ async def update_workspace_member_role(
         (workspace_id, user_id),
     )
     if target_member is None:
-        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.WORKSPACE_MEMBER_NOT_FOUND)
 
     # 4. Không cho phép thay đổi role của OWNER.
     # Tại sao? OWNER được xác định khi tạo Workspace.
     # Việc chuyển quyền sở hữu phải là một chức năng riêng.
     if target_member.role == WorkspaceRole.OWNER:
-        raise ForbiddenException(ErrorMessages.CANNOT_CHANGE_OWNER_ROLE)
+        raise ForbiddenException(ErrorMessages.CANNOT_UPDATE_OWNER_ROLE)
 
     # 5. Không cho phép gán role OWNER.
     # Tại sao? API này chỉ hỗ trợ chuyển đổi

@@ -13,6 +13,7 @@ class ErrorMessages:
 
     FORBIDDEN = "Insufficient permissions"
     PROJECT_ARCHIVED = "Cannot modify archived project"
+    DUE_DATE_CANNOT_BE_IN_PAST = "Due date cannot be in the past"
     FORBIDDEN_COMMENT = "You cannot modify this comment"
     COMMENT_CONTENT_REQUIRED = "Comment content cannot be null"
 
@@ -41,7 +42,6 @@ class ErrorMessages:
     ONLY_OWNER_CAN_UPDATE_MEMBERS = "Only OWNER can update members"
     CANNOT_UPDATE_OWNER_ROLE = "Cannot change role of OWNER"
     COULD_NOT_VALIDATE_CREDENTIALS = "Could not validate credentials"
-    CANNOT_MODIFY_ARCHIVED_PROJECT_TASKS = "Cannot modify tasks in archived project"
     ASSIGNEE_NOT_FOUND_OR_INACTIVE = "Assignee does not exist or is inactive"
     ASSIGNEE_NOT_WORKSPACE_MEMBER = "Assignee is not a member of this workspace"
     REQUIRED_FIELD_CANNOT_BE_NULL = "{field} cannot be null"

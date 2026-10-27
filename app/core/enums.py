@@ -7,8 +7,8 @@ class TokenType(StrEnum):
 
 
 class UserRole(StrEnum):
-    ADMIN = "admin"
-    MEMBER = "member"
+    ADMIN = "ADMIN"
+    MEMBER = "MEMBER"
 
 
 class WorkspaceRole(StrEnum):

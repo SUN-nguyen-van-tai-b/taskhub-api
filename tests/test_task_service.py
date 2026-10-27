@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.core.enums import WorkspaceRole
+from app.core.error_messages import ErrorMessages
 from app.core.exceptions import ConflictException, ForbiddenException
 from app.core.permissions import require_active_project, require_write_access
 from app.models.project import ProjectStatus
@@ -103,6 +104,7 @@ def test_archived_project_cannot_be_modified():
         require_active_project(project)
 
     assert_http_error(exc, 409)
+    assert exc.value.message == ErrorMessages.PROJECT_ARCHIVED
 
 
 def test_active_project_can_be_modified():

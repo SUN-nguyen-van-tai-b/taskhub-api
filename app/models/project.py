@@ -1,22 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.enums import ProjectStatus
 from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.workspace import Workspace
-
-
-class ProjectStatus(StrEnum):
-    ACTIVE = "ACTIVE"
-    ARCHIVED = "ARCHIVED"
 
 
 class Project(Base):
