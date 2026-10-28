@@ -1,0 +1,91 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, status
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.api_responses import (
+    BAD_REQUEST,
+    FORBIDDEN,
+    UNAUTHORIZED,
+    VALIDATION_ERROR,
+)
+from app.core.dependencies import get_current_user
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import BadRequestException
+from app.core.security import hash_password, verify_password
+from app.db.redis import get_redis
+from app.db.session import get_db
+from app.models.user import User
+from app.schemas.user import ChangePasswordRequest, UserResponse, UserUpdate
+from app.services.token_service import revoke_all_refresh_tokens
+
+router = APIRouter(
+    prefix="/users",
+    tags=["Users"],
+    responses={
+        **BAD_REQUEST,
+        **FORBIDDEN,
+        **UNAUTHORIZED,
+        **VALIDATION_ERROR,
+    },
+)
+
+
+@router.get("/me", response_model=UserResponse, summary="Get the current user")
+async def get_me(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    return current_user
+
+
+@router.patch("/me", response_model=UserResponse, summary="Update the current user")
+async def update_me(
+    data: UserUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    # 1. Lấy dữ liệu được gửi lên bằng model_dump(exclude_unset=True)
+    update_data = data.model_dump(exclude_unset=True)
+    # 2. Cập nhật các field được gửi vào current_user
+    for key, value in update_data.items():
+        setattr(current_user, key, value)
+    # 3. Commit thay đổi vào database
+    await db.commit()
+    # 4. Refresh current_user
+    await db.refresh(current_user)
+    # 5. Return current_user
+    return current_user
+
+
+@router.post(
+    "/me/change-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Change the current user's password",
+)
+async def change_password(
+    data: ChangePasswordRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+):
+    # 1. Kiểm tra old_password có đúng không
+    is_valid = verify_password(data.old_password, current_user.hashed_password)
+    # 2. Nếu sai → HTTP 400
+    if not is_valid:
+        raise BadRequestException(ErrorMessages.WRONG_PASSWORD)
+    # 3. Kiểm tra new_password khác old_password
+    if data.old_password == data.new_password:
+        raise BadRequestException(ErrorMessages.NEW_PASSWORD_MUST_BE_DIFFERENT)
+    # 4. Hash new_password
+    hashed_password = hash_password(data.new_password)
+    # 5. Gán vào current_user.hashed_password
+    current_user.hashed_password = hashed_password
+    # 6. Commit database
+    await db.commit()
+
+    # 7. Thu hồi tất cả Refresh Token của user.
+    await revoke_all_refresh_tokens(
+        redis=redis,
+        user_id=current_user.id,
+    )

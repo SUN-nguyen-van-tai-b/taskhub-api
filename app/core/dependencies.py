@@ -1,0 +1,199 @@
+from dataclasses import dataclass
+from typing import Annotated
+
+import jwt
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.enums import TokenType
+from app.core.error_messages import ErrorMessages
+from app.core.exceptions import NotFoundException, UnauthorizedException
+from app.core.security import decode_token
+from app.db.session import get_db
+from app.models.comment import Comment
+from app.models.project import Project
+from app.models.task import Task
+from app.models.user import User
+from app.models.workspace_member import WorkspaceMember
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(bearer_scheme),
+    ],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    credentials_exception = UnauthorizedException(
+        ErrorMessages.COULD_NOT_VALIDATE_CREDENTIALS
+    )
+
+    # 1. Kiểm tra credentials có tồn tại không
+    if credentials is None:
+        raise credentials_exception
+
+    # 2. Lấy Access Token từ credentials.credentials
+    access_token = credentials.credentials
+
+    # 3. Decode token và bắt jwt.InvalidTokenError
+    try:
+        payload = decode_token(access_token)
+    except jwt.InvalidTokenError as exc:
+        raise credentials_exception from exc
+
+    # 4. Kiểm tra type == "access"
+    if payload.get("type") != TokenType.ACCESS:
+        raise credentials_exception
+
+    # 5. Validate sub là chuỗi số hợp lệ
+    user_id = payload.get("sub")
+    if not isinstance(user_id, str) or not user_id.isdecimal():
+        raise credentials_exception
+
+    # 6. Truy vấn await db.get(User, int(user_id))
+    user = await db.get(User, int(user_id))
+
+    # 7. Kiểm tra user tồn tại và is_active
+    if user is None or not user.is_active:
+        raise credentials_exception
+
+    # 8. Return user
+    return user
+
+
+async def get_workspace_member(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WorkspaceMember:
+    member = await db.get(
+        WorkspaceMember,
+        (workspace_id, current_user.id),
+    )
+
+    if member is None:
+        raise NotFoundException(ErrorMessages.WORKSPACE_NOT_FOUND)
+
+    return member
+
+
+# chúng ta muốn một dependency trả về hai object có tên thuộc tính rõ ràng, nên dùng dataclass
+@dataclass
+class ProjectAccess:
+    project: Project
+    member: WorkspaceMember
+
+
+async def get_project_access(
+    project_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ProjectAccess:
+    # 1. Tìm Project trước vì URL chỉ chứa project_id.
+    # Nếu không tìm thấy, không thể xác định Workspace.
+    project = await db.get(Project, project_id)
+
+    if project is None:
+        raise NotFoundException(ErrorMessages.PROJECT_NOT_FOUND)
+
+    # 2. Dùng workspace_id từ Project để kiểm tra membership.
+    # Không phải thành viên thì không được truy cập Project.
+    member = await db.get(
+        WorkspaceMember,
+        (project.workspace_id, current_user.id),
+    )
+
+    if member is None:
+        raise NotFoundException(ErrorMessages.PROJECT_NOT_FOUND)
+
+    # 3. Trả cả hai object.
+    # Endpoint dùng project để xử lý dữ liệu,
+    # member để kiểm tra quyền OWNER/EDITOR/VIEWER.
+    return ProjectAccess(project=project, member=member)
+
+
+@dataclass
+class TaskAccess:
+    task: Task
+    project: Project
+    member: WorkspaceMember
+
+
+async def get_task_access(
+    task_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TaskAccess:
+
+    query = (
+        select(Task, Project, WorkspaceMember)
+        .join(Project, Task.project_id == Project.id)
+        .join(
+            WorkspaceMember,
+            WorkspaceMember.workspace_id == Project.workspace_id,
+        )
+        .where(
+            Task.id == task_id,
+            WorkspaceMember.user_id == current_user.id,
+        )
+    )
+
+    result = await db.execute(query)
+    row = result.one_or_none()
+
+    if row is None:
+        raise NotFoundException(ErrorMessages.TASK_NOT_FOUND)
+
+    task, project, member = row
+
+    return TaskAccess(
+        task=task,
+        project=project,
+        member=member,
+    )
+
+
+@dataclass
+class CommentAccess:
+    comment: Comment
+    project: Project
+    member: WorkspaceMember
+
+
+async def get_comment_access(
+    comment_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CommentAccess:
+
+    query = (
+        select(Comment, Project, WorkspaceMember)
+        .join(Task, Comment.task_id == Task.id)
+        .join(Project, Task.project_id == Project.id)
+        .join(
+            WorkspaceMember,
+            WorkspaceMember.workspace_id == Project.workspace_id,
+        )
+        .where(
+            Comment.id == comment_id,
+            WorkspaceMember.user_id == current_user.id,
+        )
+    )
+
+    result = await db.execute(query)
+    row = result.one_or_none()
+
+    if row is None:
+        raise NotFoundException(ErrorMessages.COMMENT_NOT_FOUND)
+
+    comment, project, member = row
+
+    return CommentAccess(
+        comment=comment,
+        project=project,
+        member=member,
+    )

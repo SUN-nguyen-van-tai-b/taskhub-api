@@ -1,9 +1,17 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.core.constants import MAX_PASSWORD_LENGTH
+from app.schemas.base import BaseSchema
 
 
-class UserLogin(BaseModel):
+class UserLogin(BaseSchema):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8, max_length=MAX_PASSWORD_LENGTH)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return str(value).strip().lower()
 
 
 class TokenResponse(BaseModel):
